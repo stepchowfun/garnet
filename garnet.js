@@ -10,24 +10,34 @@ exports.templateDir = path.join(process.cwd(), 'views');
 exports.templateExt = '.garnet';
 
 var normalizeTemplatePath = function(templatePath, currentDir) {
+  // get rid of things like double slashes
   templatePath = path.normalize(templatePath);
+
+  // add an extension if none present
   if (path.extname(templatePath) === '') {
     templatePath += exports.templateExt;
   }
+
+  // if no directory specified, use the default
   if (typeof currentDir === 'undefined') {
     currentDir = exports.templateDir;
   }
+
+  // if relative path, convert to absolute
   if (templatePath[0] !== '/') {
     templatePath = path.join(currentDir, templatePath);
   }
+
   return templatePath;
 };
 
 var sanitizeForString = function(str) {
-  return str.replace(/'/g, '\\\'').replace(/"/g, '\\\"').replace(/\n/g, '\\n');
+  // make the string safe for inclusion in a string
+  return str.replace(/\\/g, '\\\\').replace(/'/g, '\\\'').replace(/"/g, '\\\"').replace(/\n/g, '\\n');
 };
 
 var sanitizeForHTML = function(str) {
+  // make the string safe for inclusion in HTML
   return str
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
@@ -37,6 +47,7 @@ var sanitizeForHTML = function(str) {
 };
 
 var getTemplateParts = function(str, skipDependencyDeclarations) {
+  // items in this array alternate between raw text and template code
   var rawParts = str.split('%');
 
   // treat '%%' as an escaped '%'
@@ -69,8 +80,10 @@ var getTemplateParts = function(str, skipDependencyDeclarations) {
   }
 };
 
-var warmFileCache = function(templatePath, callback) {
+var loadDependencies = function(templatePath, callback) {
   templatePath = normalizeTemplatePath(templatePath);
+
+  // we use reference counting to determine when the last async callback happens
   var refCount = 1;
 
   var done = function(err) {
@@ -88,7 +101,8 @@ var warmFileCache = function(templatePath, callback) {
     }
   };
 
-  var warmFileCacheRecurse = function(filePath) {
+  // recursively load dependencies with this function
+  var loadDependenciesRecurse = function(filePath) {
     filePath = normalizeTemplatePath(filePath, path.dirname(templatePath));
 
     if (fileCache.hasOwnProperty(filePath)) {
@@ -96,6 +110,7 @@ var warmFileCache = function(templatePath, callback) {
       return;
     }
 
+    // read and parse the file
     fs.readFile(filePath, { encoding: 'utf8' }, function(err, template) {
       if (err) {
         done(err);
@@ -107,15 +122,18 @@ var warmFileCache = function(templatePath, callback) {
         if (parts[i].length > 0 && parts[i][0] === '@') {
           refCount += 1;
           var partialPath = normalizeTemplatePath(parts[i].slice(1).replace(/^\s+|\s+$/g, ''), path.dirname(filePath));
-          warmFileCacheRecurse(partialPath);
+          loadDependenciesRecurse(partialPath);
         }
       }
+
+      // cache this file
       fileCache[filePath] = template;
       done();
     });
   };
 
-  warmFileCacheRecurse(templatePath);
+  // start with the input path
+  loadDependenciesRecurse(templatePath);
 };
 
 var compile = function(templatePath) {
@@ -129,6 +147,7 @@ var compile = function(templatePath) {
     throw new Error('Template ' + templatePath + ' must be loaded in fileCache before compilation.');
   }
 
+  // prevent circular dependencies from resulting in infinite loops
   codeCache[templatePath] = function() { };
 
   var template = fileCache[templatePath];
@@ -138,6 +157,7 @@ var compile = function(templatePath) {
     throw new Error('Missing \'%\' in template ' + templatePath + '.');
   }
 
+  // compile the template to JavaScript
   var body = 'var result=\'' + sanitizeForString(parts[0]) + '\';';
   for (var i = 1; i < parts.length; i++) {
     if (i % 2 === 0) {
@@ -156,6 +176,7 @@ var compile = function(templatePath) {
   }
   body += 'return result;';
 
+  // this function is available in the view for rendering partials
   render = function(filePath, locals) {
     var partialPath = normalizeTemplatePath(filePath, path.dirname(templatePath));
     if (codeCache.hasOwnProperty(partialPath)) {
@@ -169,6 +190,7 @@ var compile = function(templatePath) {
     }
   };
 
+  // cache the compiled template
   codeCache[templatePath] = function(locals) {
     var templatefn = new Function('sanitizeForHTML', 'render', 'locals', body);
     return templatefn(sanitizeForHTML, render, locals);
@@ -178,6 +200,7 @@ var compile = function(templatePath) {
 };
 
 exports.require = function(templatePath) {
+  // mark this path as a dependency
   toCache[normalizeTemplatePath(templatePath)] = true;
 };
 
@@ -186,7 +209,7 @@ exports.render = function(templatePath, locals, callback) {
   if (Object.keys(toCache).length > 0) {
     arbitraryPath = Object.keys(toCache)[0];
     delete toCache[arbitraryPath];
-    warmFileCache(arbitraryPath, function(err) {
+    loadDependencies(arbitraryPath, function(err) {
       if (err) {
         callback(err);
         return;
@@ -202,7 +225,7 @@ exports.render = function(templatePath, locals, callback) {
   }
 
   // make sure the template is loaded from disk
-  warmFileCache(templatePath, function(err) {
+  loadDependencies(templatePath, function(err) {
     if (err) {
       callback(err);
       return;

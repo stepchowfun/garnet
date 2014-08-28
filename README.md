@@ -29,6 +29,8 @@ The only function is:
 
 `path` is the path to the template file. `locals` is an object that is made available to the template. `callback(err, output)` is called with the result.
 
+All template code exists in `% ... %` tags (of various flavors). If you want to include a raw `%` in the output, use `%%`.
+
 ### Default template directory
 
 By default, Garnet looks in `./views` for unqualified template names. If you want to change the default path to `./templates`, use:
