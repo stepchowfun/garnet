@@ -21,11 +21,11 @@ var normalizeTemplatePath = function(templatePath, currentDir) {
     templatePath = path.join(currentDir, templatePath);
   }
   return templatePath;
-}
+};
 
 var sanitizeForString = function(str) {
   return str.replace(/'/g, '\\\'').replace(/"/g, '\\\"').replace(/\n/g, '\\n');
-}
+};
 
 var sanitizeForHTML = function(str) {
   return str
@@ -53,21 +53,21 @@ var getTemplateParts = function(str, skipDependencyDeclarations) {
   if (skipDependencyDeclarations) {
     // skip '%@ ... %'
     var partsWithoutDependencies = [];
-    for (var i = 0; i < escapedParts.length; i++) {
-      if (i % 2 === 1 && escapedParts[i].length > 0 && escapedParts[i][0] === '@') {
-        if (i + 1 < escapedParts.length) {
-          partsWithoutDependencies[partsWithoutDependencies.length - 1] += escapedParts[i + 1];
-          i++;
+    for (var j = 0; j < escapedParts.length; j++) {
+      if (j % 2 === 1 && escapedParts[j].length > 0 && escapedParts[j][0] === '@') {
+        if (j + 1 < escapedParts.length) {
+          partsWithoutDependencies[partsWithoutDependencies.length - 1] += escapedParts[j + 1];
+          j++;
         }
       } else {
-        partsWithoutDependencies.push(escapedParts[i]);
+        partsWithoutDependencies.push(escapedParts[j]);
       }
     }
     return partsWithoutDependencies;
   } else {
     return escapedParts;
   }
-}
+};
 
 var warmFileCache = function(templatePath, callback) {
   templatePath = normalizeTemplatePath(templatePath);
@@ -116,7 +116,7 @@ var warmFileCache = function(templatePath, callback) {
   };
 
   warmFileCacheRecurse(templatePath);
-}
+};
 
 var compile = function(templatePath) {
   templatePath = normalizeTemplatePath(templatePath);
@@ -175,11 +175,11 @@ var compile = function(templatePath) {
   };
 
   return codeCache[templatePath];
-}
+};
 
 exports.require = function(templatePath) {
   toCache[normalizeTemplatePath(templatePath)] = true;
-}
+};
 
 exports.render = function(templatePath, locals, callback) {
   // asynchronously load all the paths in toCache
@@ -224,7 +224,7 @@ exports.render = function(templatePath, locals, callback) {
       callback(e);
     }
   });
-}
+};
 
 // for Express
-exports.__express = exports.render
+exports.__express = exports.render;
