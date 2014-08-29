@@ -13,6 +13,7 @@ Features
 
 - Compatible with [Express](http://expressjs.com/)
 - Performant due to caching and precompilation
+- Never performs synchronous I/O
 - Evaluate JavaScript (e.g., for conditionals and loops): `% code %`
 - Evaluate and embed (with sanitization): `%= code %`
 - Evaluate and embed (without sanitization): `%- code %`
@@ -98,7 +99,7 @@ In `views/user.garnet`:
 
 ### Includes
 
-Garnet does not read from disk inside a view. In order to include a view inside another view, you must first make sure Garnet has a copy of it in memory.
+Because Garnet does never does synchronous I/O, it cannot read from disk while rendering a view. In order to include a view inside another view, you must first make sure Garnet has a copy of it in memory.
 
 In most cases, you can declare view dependencies right in the parent view like this: `%@ path %`. Before rendering a view, Garnet will recursively scan the view for such dependencies and load them into memory. Then you can render nested views with `%- render(path, locals) %`. Example:
 
