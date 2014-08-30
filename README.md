@@ -14,9 +14,9 @@ Features
 - Compatible with [Express](http://expressjs.com/)
 - Performant due to caching and precompilation
 - Never performs synchronous I/O
-- Evaluate JavaScript (e.g., for conditionals and loops): `% code %`
-- Evaluate and embed (with sanitization): `%= code %`
-- Evaluate and embed (without sanitization): `%- code %`
+- Evaluate JavaScript (e.g., for conditionals and loops): `<% code %>`
+- Evaluate and embed (with sanitization): `<%= code %>`
+- Evaluate and embed (without sanitization): `<%- code %>`
 - A flexible inclusion mechanism for partials, layouts, etc.
 
 API
@@ -29,8 +29,6 @@ The only function is:
     garnet.render(path, locals, callback)
 
 `path` is the path to the template file. `locals` is an object that is made available to the template. `callback(err, output)` is called with the result.
-
-All template code exists in `% ... %` tags (of various flavors). If you want to include a raw `%` in the output, use `%%`.
 
 ### Default template directory
 
@@ -83,33 +81,33 @@ For example, in `app.js`:
 
 In `views/user.garnet`:
 
-    Name: %= locals.name %
+    Name: <%= locals.name %>
 
 ### Conditionals
 
-    % if (user) { %
-      Name: %= user.name %
-    % } %
+    <% if (user) { %>
+      Name: <%= user.name %>
+    <% } %>
 
 ### Loops
 
-    % for (var i = 0; i < 10; i++) { %
-      Number: %= i %
-    % } %
+    <% for (var i = 0; i < 10; i++) { %>
+      Number: <%= i %>
+    <% } %>
 
 ### Includes
 
 Because Garnet does never does synchronous I/O, it cannot read from disk while rendering a view. In order to include a view inside another view, you must first make sure Garnet has a copy of it in memory.
 
-In most cases, you can declare view dependencies right in the parent view like this: `%@ path %`. Before rendering a view, Garnet will recursively scan the view for such dependencies and load them into memory. Then you can render nested views with `%- render(path, locals) %`. Example:
+In most cases, you can declare view dependencies right in the parent view like this: `<%@ path %>`. Before rendering a view, Garnet will recursively scan the view for such dependencies and load them into memory. Then you can render nested views with `<%- render(path, locals) %>`. Example:
 
     <!-- Tell the preprocessor to load 'user.garmet' in advance -->
-    %@ user.garnet %
+    <%@ user.garnet %>
 
     <p>Here is some information about the user:</p>
 
     <!-- Include the view here -->
-    %- render('user.garnet', { user: someUser }) %
+    <%- render('user.garnet', { user: someUser }) %>
 
 Sometimes, you don't always know in advance the name of the view you want to include.  For example, suppose you want to implement a layout, passing the name of the view as a local:
 
@@ -119,11 +117,11 @@ Sometimes, you don't always know in advance the name of the view you want to inc
         <title>Layout Demo</title>
       </head>
       <body>
-        %- render(locals.view) %
+        <%- render(locals.view) %>
       </body>
     </html>
 
-We can't declare `locals.view` as a dependency using the `%@ ... %` syntax because it is not known in advance (the preprocessor does not evaluate JavaScript). We still need to tell Garnet to load this file from disk before rendering. To do this, we call `garnet.require(path)`. In Express, that might look like this:
+We can't declare `locals.view` as a dependency using the `<%@ ... %>` syntax because it is not known in advance (the preprocessor does not evaluate JavaScript). We still need to tell Garnet to load this file from disk before rendering. To do this, we call `garnet.require(path)`. In Express, that might look like this:
 
     app.get('/', function(req, res) {
       // We can change this path to render different views with the same layout

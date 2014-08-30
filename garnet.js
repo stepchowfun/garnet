@@ -10,7 +10,7 @@ exports.templateDir = path.join(process.cwd(), 'views');
 exports.templateExt = '.garnet';
 
 var normalizeTemplatePath = function(templatePath, currentDir) {
-  // get rid of things like double slashes
+  // fix double slashes, take care of '.' and '..', etc.
   templatePath = path.normalize(templatePath);
 
   // add an extension if none present
@@ -46,37 +46,56 @@ var sanitizeForHTML = function(str) {
     .replace(/>/g, '&gt;');
 };
 
-var getTemplateParts = function(str, skipDependencyDeclarations) {
+var getTemplateParts = function(str, skipDependencyDeclarations, templatePath) {
   // items in this array alternate between raw text and template code
-  var rawParts = str.split('%');
-
-  // treat '%%' as an escaped '%'
-  var escapedParts = [];
-  for (var i = 0; i < rawParts.length; i++) {
-    if (i + 2 < rawParts.length && rawParts[i + 1].length === 0) {
-      escapedParts.push(rawParts[i] + '%' + rawParts[i + 2]);
-      i += 2;
+  var parts = [];
+  var pos = 0;
+  while (true) {
+    var openPos = str.indexOf('<%', pos);
+    var closePos = str.indexOf('%>', pos);
+    if (openPos === -1) {
+      if (closePos === -1) {
+        parts.push(str.slice(pos));
+        break;
+      } else {
+        throw new Error('Unexpected \'%>\' at position ' + String(closePos) + ' in template ' + templatePath + '.');
+      }
     } else {
-      escapedParts.push(rawParts[i]);
+      if (closePos === -1) {
+        throw new Error('Missing \'%>\' in template ' + templatePath + '.');
+      } else {
+        if (closePos < openPos) {
+          throw new Error('Unexpected \'%>\' at position ' + String(closePos) + ' in template ' + templatePath + '.');
+        } else {
+          parts.push(str.slice(pos, openPos));
+          var nextOpenPos = str.indexOf('<%', openPos + 2);
+          if (nextOpenPos !== -1 && nextOpenPos < closePos) {
+            throw new Error('Unexpected \'<%\' at position ' + String(nextOpenPos) + ' in template ' + templatePath + '.');
+          }
+        }
+      }
     }
+
+    parts.push(str.slice(openPos + 2, closePos));
+    pos = closePos + 2;
   }
 
   if (skipDependencyDeclarations) {
-    // skip '%@ ... %'
+    // skip '<%@ ... %>'
     var partsWithoutDependencies = [];
-    for (var j = 0; j < escapedParts.length; j++) {
-      if (j % 2 === 1 && escapedParts[j].length > 0 && escapedParts[j][0] === '@') {
-        if (j + 1 < escapedParts.length) {
-          partsWithoutDependencies[partsWithoutDependencies.length - 1] += escapedParts[j + 1];
+    for (var j = 0; j < parts.length; j++) {
+      if (j % 2 === 1 && parts[j].length > 0 && parts[j][0] === '@') {
+        if (j + 1 < parts.length) {
+          partsWithoutDependencies[partsWithoutDependencies.length - 1] += parts[j + 1];
           j++;
         }
       } else {
-        partsWithoutDependencies.push(escapedParts[j]);
+        partsWithoutDependencies.push(parts[j]);
       }
     }
     return partsWithoutDependencies;
   } else {
-    return escapedParts;
+    return parts;
   }
 };
 
@@ -117,18 +136,28 @@ var loadDependencies = function(templatePath, callback) {
         return;
       }
 
-      var parts = getTemplateParts(template, false);
-      for (var i = 1; i < parts.length; i += 2) {
-        if (parts[i].length > 0 && parts[i][0] === '@') {
-          refCount += 1;
-          var partialPath = normalizeTemplatePath(parts[i].slice(1).replace(/^\s+|\s+$/g, ''), path.dirname(filePath));
-          loadDependenciesRecurse(partialPath);
-        }
+      var parts = null;
+      try {
+        parts = getTemplateParts(template, false, filePath);
+      } catch (e) {
+        done(e);
       }
 
-      // cache this file
-      fileCache[filePath] = template;
-      done();
+      if (parts !== null) {
+        // find dependency declarations
+        for (var i = 1; i < parts.length; i += 2) {
+          if (parts[i].length > 0 && parts[i][0] === '@') {
+            // recursively load dependencies
+            refCount += 1;
+            var partialPath = normalizeTemplatePath(parts[i].slice(1).replace(/^\s+|\s+$/g, ''), path.dirname(filePath));
+            loadDependenciesRecurse(partialPath);
+          }
+        }
+
+        // cache this file
+        fileCache[filePath] = template;
+        done();
+      }
     });
   };
 
@@ -136,45 +165,41 @@ var loadDependencies = function(templatePath, callback) {
   loadDependenciesRecurse(templatePath);
 };
 
+// note: this function does not read from disk
+// the template file must already be in memory
 var compile = function(templatePath) {
   templatePath = normalizeTemplatePath(templatePath);
 
+  // check if the function is already compiled
   if (codeCache.hasOwnProperty(templatePath)) {
     return codeCache[templatePath];
-  }
-
-  if (!fileCache.hasOwnProperty(templatePath)) {
-    throw new Error('Template ' + templatePath + ' must be loaded in fileCache before compilation.');
   }
 
   // prevent circular dependencies from resulting in infinite loops
   codeCache[templatePath] = function() { };
 
   var template = fileCache[templatePath];
-  var parts = getTemplateParts(template, true);
-
-  if (parts.length % 2 === 0) {
-    throw new Error('Missing \'%\' in template ' + templatePath + '.');
-  }
+  var parts = getTemplateParts(template, true, templatePath);
 
   // compile the template to JavaScript
-  var body = 'var result=\'' + sanitizeForString(parts[0]) + '\';';
+  var resultName = 'r' + String(Math.floor(Math.random() * 1000000000));
+  var body = 'var ' + resultName + '=\'' + sanitizeForString(parts[0]) + '\';';
   for (var i = 1; i < parts.length; i++) {
     if (i % 2 === 0) {
       if (parts[i].length > 0) {
-        body += 'result+=\'' + sanitizeForString(parts[i]) + '\';';
+        body += resultName + '+=\'' + sanitizeForString(parts[i]) + '\';';
       }
     } else {
       if (parts[i].length > 0 && parts[i][0] === '=') {
-        body += 'result+=sanitizeForHTML(String(' + parts[i].slice(1).replace(/^\s+|\s+$/g, '') + '\n));';
+        body += resultName + '+=sanitizeForHTML(String(' + parts[i].slice(1).replace(/^\s+|\s+$/g, '') + '\n));';
       } else if (parts[i].length > 0 && parts[i][0] === '-') {
-        body += 'result+=String(' + parts[i].slice(1).replace(/^\s+|\s+$/g, '') + '\n);';
+        body += resultName + '+=String(' + parts[i].slice(1).replace(/^\s+|\s+$/g, '') + '\n);';
       } else {
         body += parts[i].replace(/^\s+|\s+$/g, '') + ';\n';
       }
     }
   }
-  body += 'return result;';
+  body += 'return ' + resultName + ';';
 
   // this function is available in the view for rendering partials
   render = function(filePath, locals) {
