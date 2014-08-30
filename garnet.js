@@ -39,9 +39,9 @@ var sanitizeForString = function(str) {
 var sanitizeForHTML = function(str) {
   // make the string safe for inclusion in HTML
   return str
+    .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
-    .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 };
