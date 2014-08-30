@@ -33,7 +33,11 @@ var normalizeTemplatePath = function(templatePath, currentDir) {
 
 var sanitizeForString = function(str) {
   // make the string safe for inclusion in a string
-  return str.replace(/\\/g, '\\\\').replace(/'/g, '\\\'').replace(/"/g, '\\\"').replace(/\n/g, '\\n');
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, '\\\'')
+    .replace(/"/g, '\\\"')
+    .replace(/\n/g, '\\n');
 };
 
 var sanitizeForHTML = function(str) {
