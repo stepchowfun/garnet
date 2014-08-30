@@ -110,7 +110,7 @@ var loadDependencies = function(templatePath, callback) {
   var refCount = 1;
 
   var done = function(err) {
-    if (refCount >= 0) {
+    if (refCount !== -1) {
       if (err) {
         callback(err);
         refCount = -1;
@@ -140,28 +140,26 @@ var loadDependencies = function(templatePath, callback) {
         return;
       }
 
-      var parts = null;
       try {
-        parts = getTemplateParts(template, false, filePath);
+        var parts = getTemplateParts(template, false, filePath);
       } catch (e) {
         done(e);
+        return;
       }
 
-      if (parts !== null) {
-        // find dependency declarations
-        for (var i = 1; i < parts.length; i += 2) {
-          if (parts[i].length > 0 && parts[i][0] === '@') {
-            // recursively load dependencies
-            refCount += 1;
-            var partialPath = normalizeTemplatePath(parts[i].slice(1).replace(/^\s+|\s+$/g, ''), path.dirname(filePath));
-            loadDependenciesRecurse(partialPath);
-          }
+      // find dependency declarations
+      for (var i = 1; i < parts.length; i += 2) {
+        if (parts[i].length > 0 && parts[i][0] === '@') {
+          // recursively load dependencies
+          refCount += 1;
+          var partialPath = normalizeTemplatePath(parts[i].slice(1).replace(/^\s+|\s+$/g, ''), path.dirname(filePath));
+          loadDependenciesRecurse(partialPath);
         }
-
-        // cache this file
-        fileCache[filePath] = template;
-        done();
       }
+
+      // cache this file
+      fileCache[filePath] = template;
+      done();
     });
   };
 
