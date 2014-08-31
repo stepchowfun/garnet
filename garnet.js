@@ -1,18 +1,13 @@
 var fs = require('fs');
 var path = require('path');
 
-var fileCache = { };
-var codeCache = { };
-var toCache = { };
-
 exports.enableCaching = true;
 exports.templateDir = path.join(process.cwd(), 'views');
 exports.templateExt = '.garnet';
 
-var normalizeTemplatePath = function(templatePath, currentDir) {
-  // fix double slashes, take care of '.' and '..', etc.
-  templatePath = path.normalize(templatePath);
+var templateCache = { };
 
+var normalizeTemplatePath = function(templatePath, currentDir) {
   // add an extension if none present
   if (path.extname(templatePath) === '') {
     templatePath += exports.templateExt;
@@ -28,7 +23,8 @@ var normalizeTemplatePath = function(templatePath, currentDir) {
     templatePath = path.join(currentDir, templatePath);
   }
 
-  return templatePath;
+  // fix double slashes, take care of '.' and '..', etc.
+  return path.normalize(templatePath);
 };
 
 var sanitizeForString = function(str) {
@@ -50,16 +46,29 @@ var sanitizeForHTML = function(str) {
     .replace(/>/g, '&gt;');
 };
 
-var getTemplateParts = function(str, skipDependencyDeclarations, templatePath) {
+exports.compile = function(templatePath) {
+  templatePath = normalizeTemplatePath(templatePath);
+
+  // check if the template is already compiled
+  if (exports.enableCaching && templateCache.hasOwnProperty(templatePath)) {
+    return templateCache[templatePath];
+  }
+
+  // load the template from disk
+  var templateStr = fs.readFileSync(templatePath, { encoding: 'utf8' });
+
   // items in this array alternate between raw text and template code
   var parts = [];
+
+  // alternate between parsing text and code
   var pos = 0;
   while (true) {
-    var openPos = str.indexOf('<%', pos);
-    var closePos = str.indexOf('%>', pos);
+    // add the next text part and check for syntax errors
+    var openPos = templateStr.indexOf('<%', pos);
+    var closePos = templateStr.indexOf('%>', pos);
     if (openPos === -1) {
       if (closePos === -1) {
-        parts.push(str.slice(pos));
+        parts.push(templateStr.slice(pos));
         break;
       } else {
         throw new Error('Unexpected \'%>\' at position ' + String(closePos) + ' in template ' + templatePath + '.');
@@ -71,8 +80,8 @@ var getTemplateParts = function(str, skipDependencyDeclarations, templatePath) {
         if (closePos < openPos) {
           throw new Error('Unexpected \'%>\' at position ' + String(closePos) + ' in template ' + templatePath + '.');
         } else {
-          parts.push(str.slice(pos, openPos));
-          var nextOpenPos = str.indexOf('<%', openPos + 2);
+          parts.push(templateStr.slice(pos, openPos));
+          var nextOpenPos = templateStr.indexOf('<%', openPos + 2);
           if (nextOpenPos !== -1 && nextOpenPos < closePos) {
             throw new Error('Unexpected \'<%\' at position ' + String(nextOpenPos) + ' in template ' + templatePath + '.');
           }
@@ -80,106 +89,12 @@ var getTemplateParts = function(str, skipDependencyDeclarations, templatePath) {
       }
     }
 
-    parts.push(str.slice(openPos + 2, closePos));
+    // add the following code part
+    parts.push(templateStr.slice(openPos + 2, closePos));
     pos = closePos + 2;
   }
 
-  if (skipDependencyDeclarations) {
-    // skip '<%@ ... %>'
-    var partsWithoutDependencies = [];
-    for (var j = 0; j < parts.length; j++) {
-      if (j % 2 === 1 && parts[j].length > 0 && parts[j][0] === '@') {
-        if (j + 1 < parts.length) {
-          partsWithoutDependencies[partsWithoutDependencies.length - 1] += parts[j + 1];
-          j++;
-        }
-      } else {
-        partsWithoutDependencies.push(parts[j]);
-      }
-    }
-    return partsWithoutDependencies;
-  } else {
-    return parts;
-  }
-};
-
-var loadDependencies = function(templatePath, callback) {
-  templatePath = normalizeTemplatePath(templatePath);
-
-  // we use reference counting to determine when the last async callback happens
-  var refCount = 1;
-
-  var done = function(err) {
-    if (refCount !== -1) {
-      if (err) {
-        refCount = -1;
-        return callback(err);
-      }
-
-      refCount -= 1;
-      if (refCount === 0) {
-        return callback();
-      }
-    }
-  };
-
-  // recursively load dependencies with this function
-  var loadDependenciesRecurse = function(filePath) {
-    filePath = normalizeTemplatePath(filePath, path.dirname(templatePath));
-
-    if (fileCache.hasOwnProperty(filePath)) {
-      return done();
-    }
-
-    // read and parse the file
-    fs.readFile(filePath, { encoding: 'utf8' }, function(err, template) {
-      if (err) {
-        return done(err);
-      }
-
-      try {
-        var parts = getTemplateParts(template, false, filePath);
-      } catch (e) {
-        return done(e);
-      }
-
-      // find dependency declarations
-      for (var i = 1; i < parts.length; i += 2) {
-        if (parts[i].length > 0 && parts[i][0] === '@') {
-          // recursively load dependencies
-          refCount += 1;
-          var partialPath = normalizeTemplatePath(parts[i].slice(1).replace(/^\s+|\s+$/g, ''), path.dirname(filePath));
-          loadDependenciesRecurse(partialPath);
-        }
-      }
-
-      // cache this file
-      fileCache[filePath] = template;
-      return done();
-    });
-  };
-
-  // start with the input path
-  loadDependenciesRecurse(templatePath);
-};
-
-// note: this function does not read from disk
-// the template file must already be in memory
-var compile = function(templatePath) {
-  templatePath = normalizeTemplatePath(templatePath);
-
-  // check if the function is already compiled
-  if (codeCache.hasOwnProperty(templatePath)) {
-    return codeCache[templatePath];
-  }
-
-  // prevent circular dependencies from resulting in infinite loops
-  codeCache[templatePath] = function() { };
-
-  var template = fileCache[templatePath];
-  var parts = getTemplateParts(template, true, templatePath);
-
-  // compile the template to JavaScript
+  // compile the template
   var resultName = 'r' + String(Math.floor(Math.random() * 1000000000));
   var body = 'var ' + resultName + '=\'' + sanitizeForString(parts[0]) + '\';';
   for (var i = 1; i < parts.length; i++) {
@@ -200,78 +115,30 @@ var compile = function(templatePath) {
   body += 'return ' + resultName + ';';
 
   // this function is available in the view for rendering partials
-  render = function(filePath, locals) {
-    var partialPath = normalizeTemplatePath(filePath, path.dirname(templatePath));
-    if (codeCache.hasOwnProperty(partialPath)) {
-      return codeCache[partialPath](locals);
-    } else {
-      if (fileCache.hasOwnProperty(partialPath)) {
-        return compile(partialPath)(locals);
-      } else {
-        throw new Error('Template ' + templatePath + ' does not declare dependency ' + partialPath + '.');
-      }
-    }
+  render = function(partialPath, locals) {
+    partialPath = normalizeTemplatePath(partialPath, path.dirname(templatePath));
+    return exports.compile(partialPath)(locals);
   };
 
-  // cache the compiled template
-  codeCache[templatePath] = function(locals) {
-    var templatefn = new Function('sanitizeForHTML', 'render', 'locals', body);
-    return templatefn(sanitizeForHTML, render, locals);
+  // construct the template function
+  var template = function(locals) {
+    var templateFn = new Function('sanitizeForHTML', 'render', 'locals', body);
+    return templateFn(sanitizeForHTML, render, locals);
   };
 
-  return codeCache[templatePath];
-};
-
-exports.require = function(templatePath) {
-  // mark this path as a dependency
-  toCache[normalizeTemplatePath(templatePath)] = true;
-};
-
-exports.render = function(templatePath, locals, callback) {
-  // asynchronously load all the paths in toCache
-  if (Object.keys(toCache).length > 0) {
-    arbitraryPath = Object.keys(toCache)[0];
-    delete toCache[arbitraryPath];
-    loadDependencies(arbitraryPath, function(err) {
-      if (err) {
-        return callback(err);
-      }
-
-      try {
-        return exports.render(templatePath, locals, callback);
-      } catch (e) {
-        return callback(e);
-      }
-    });
-    return;
+  // cache the compiled template if caching is enabled
+  if (exports.enableCaching) {
+    templateCache[templatePath] = template;
   }
 
-  // make sure the template is loaded from disk
-  loadDependencies(templatePath, function(err) {
-    if (err) {
-      return callback(err);
-    }
-
-    try {
-      // fetch the compiled template (and compile if necessary)
-      var fn = compile(templatePath);
-
-      // render the template
-      var output = fn(locals);
-
-      // clear the cache if caching is disabled
-      if (!exports.enableCaching) {
-        fileCache = { };
-        codeCache = { };
-      }
-
-      // call the continuation
-      return callback(null, output);
-    } catch (e) {
-      return callback(e);
-    }
-  });
+  return template;
 };
 
 // for Express
-exports.__express = exports.render;
+exports.__express = function(templatePath, locals, callback) {
+  try {
+    return callback(null, exports.compile(templatePath)(locals));
+  } catch (e) {
+    return callback(e);
+  }
+}
