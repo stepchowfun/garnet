@@ -112,14 +112,13 @@ var loadDependencies = function(templatePath, callback) {
   var done = function(err) {
     if (refCount !== -1) {
       if (err) {
-        callback(err);
         refCount = -1;
-        return;
+        return callback(err);
       }
 
       refCount -= 1;
       if (refCount === 0) {
-        callback();
+        return callback();
       }
     }
   };
@@ -129,22 +128,19 @@ var loadDependencies = function(templatePath, callback) {
     filePath = normalizeTemplatePath(filePath, path.dirname(templatePath));
 
     if (fileCache.hasOwnProperty(filePath)) {
-      done();
-      return;
+      return done();
     }
 
     // read and parse the file
     fs.readFile(filePath, { encoding: 'utf8' }, function(err, template) {
       if (err) {
-        done(err);
-        return;
+        return done(err);
       }
 
       try {
         var parts = getTemplateParts(template, false, filePath);
       } catch (e) {
-        done(e);
-        return;
+        return done(e);
       }
 
       // find dependency declarations
@@ -159,7 +155,7 @@ var loadDependencies = function(templatePath, callback) {
 
       // cache this file
       fileCache[filePath] = template;
-      done();
+      return done();
     });
   };
 
@@ -238,14 +234,13 @@ exports.render = function(templatePath, locals, callback) {
     delete toCache[arbitraryPath];
     loadDependencies(arbitraryPath, function(err) {
       if (err) {
-        callback(err);
-        return;
+        return callback(err);
       }
 
       try {
-        exports.render(templatePath, locals, callback);
+        return exports.render(templatePath, locals, callback);
       } catch (e) {
-        callback(e);
+        return callback(e);
       }
     });
     return;
@@ -254,8 +249,7 @@ exports.render = function(templatePath, locals, callback) {
   // make sure the template is loaded from disk
   loadDependencies(templatePath, function(err) {
     if (err) {
-      callback(err);
-      return;
+      return callback(err);
     }
 
     try {
@@ -263,15 +257,18 @@ exports.render = function(templatePath, locals, callback) {
       var fn = compile(templatePath);
 
       // render the template
-      callback(null, fn(locals));
+      var output = fn(locals);
 
       // clear the cache if caching is disabled
       if (!exports.enableCaching) {
         fileCache = { };
         codeCache = { };
       }
+
+      // call the continuation
+      return callback(null, output);
     } catch (e) {
-      callback(e);
+      return callback(e);
     }
   });
 };
