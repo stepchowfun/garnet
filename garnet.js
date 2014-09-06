@@ -25,7 +25,7 @@ var normalizeTemplatePath = function(templatePath, currentDir) {
 
   // if relative path, convert to absolute
   if (normalizedTemplatePath[0] !== '/') {
-    normalizedTemplatePath = path.join(currentDir, normalizedTemplatePath);
+    normalizedTemplatePath = path.join(realCurrentDir, normalizedTemplatePath);
   }
 
   // fix double slashes, take care of '.' and '..', etc.
@@ -121,8 +121,8 @@ exports.compile = function(templatePath) {
 
   // this function is available in the view for rendering partials
   var render = function(partialPath, locals) {
-    partialPath = normalizeTemplatePath(partialPath, path.dirname(normalizedTemplatePath));
-    return exports.compile(partialPath)(locals);
+    var normalizedPartialPath = normalizeTemplatePath(partialPath, path.dirname(normalizedTemplatePath));
+    return exports.compile(normalizedPartialPath)(locals);
   };
 
   // construct the template function
