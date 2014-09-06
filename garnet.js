@@ -1,3 +1,5 @@
+'use strict';
+
 var fs = require('fs');
 var path = require('path');
 
@@ -8,23 +10,26 @@ exports.templateExt = '.garnet';
 var templateCache = { };
 
 var normalizeTemplatePath = function(templatePath, currentDir) {
+  var normalizedTemplatePath = templatePath;
+  var realCurrentDir = currentDir;
+
   // add an extension if none present
-  if (path.extname(templatePath) === '') {
-    templatePath += exports.templateExt;
+  if (path.extname(normalizedTemplatePath) === '') {
+    normalizedTemplatePath += exports.templateExt;
   }
 
   // if no directory specified, use the default
-  if (typeof currentDir === 'undefined') {
-    currentDir = exports.templateDir;
+  if (typeof realCurrentDir === 'undefined') {
+    realCurrentDir = exports.templateDir;
   }
 
   // if relative path, convert to absolute
-  if (templatePath[0] !== '/') {
-    templatePath = path.join(currentDir, templatePath);
+  if (normalizedTemplatePath[0] !== '/') {
+    normalizedTemplatePath = path.join(currentDir, normalizedTemplatePath);
   }
 
   // fix double slashes, take care of '.' and '..', etc.
-  return path.normalize(templatePath);
+  return path.normalize(normalizedTemplatePath);
 };
 
 var sanitizeForString = function(str) {
@@ -47,15 +52,15 @@ var sanitizeForHTML = function(str) {
 };
 
 exports.compile = function(templatePath) {
-  templatePath = normalizeTemplatePath(templatePath);
+  var normalizedTemplatePath = normalizeTemplatePath(templatePath);
 
   // check if the template is already compiled
-  if (exports.enableCaching && templateCache.hasOwnProperty(templatePath)) {
-    return templateCache[templatePath];
+  if (exports.enableCaching && templateCache.hasOwnProperty(normalizedTemplatePath)) {
+    return templateCache[normalizedTemplatePath];
   }
 
   // load the template from disk
-  var templateStr = fs.readFileSync(templatePath, { encoding: 'utf8' });
+  var templateStr = fs.readFileSync(normalizedTemplatePath, { encoding: 'utf8' });
 
   // items in this array alternate between raw text and template code
   var parts = [];
@@ -71,19 +76,19 @@ exports.compile = function(templatePath) {
         parts.push(templateStr.slice(pos));
         break;
       } else {
-        throw new Error('Unexpected \'%>\' at position ' + String(closePos) + ' in template ' + templatePath + '.');
+        throw new Error('Unexpected \'%>\' at position ' + String(closePos) + ' in template ' + normalizedTemplatePath + '.');
       }
     } else {
       if (closePos === -1) {
-        throw new Error('Missing \'%>\' in template ' + templatePath + '.');
+        throw new Error('Missing \'%>\' in template ' + normalizedTemplatePath + '.');
       } else {
         if (closePos < openPos) {
-          throw new Error('Unexpected \'%>\' at position ' + String(closePos) + ' in template ' + templatePath + '.');
+          throw new Error('Unexpected \'%>\' at position ' + String(closePos) + ' in template ' + normalizedTemplatePath + '.');
         } else {
           parts.push(templateStr.slice(pos, openPos));
           var nextOpenPos = templateStr.indexOf('<%', openPos + 2);
           if (nextOpenPos !== -1 && nextOpenPos < closePos) {
-            throw new Error('Unexpected \'<%\' at position ' + String(nextOpenPos) + ' in template ' + templatePath + '.');
+            throw new Error('Unexpected \'<%\' at position ' + String(nextOpenPos) + ' in template ' + normalizedTemplatePath + '.');
           }
         }
       }
@@ -115,8 +120,8 @@ exports.compile = function(templatePath) {
   body += 'return ' + resultName + ';';
 
   // this function is available in the view for rendering partials
-  render = function(partialPath, locals) {
-    partialPath = normalizeTemplatePath(partialPath, path.dirname(templatePath));
+  var render = function(partialPath, locals) {
+    partialPath = normalizeTemplatePath(partialPath, path.dirname(normalizedTemplatePath));
     return exports.compile(partialPath)(locals);
   };
 
@@ -128,7 +133,7 @@ exports.compile = function(templatePath) {
 
   // cache the compiled template if caching is enabled
   if (exports.enableCaching) {
-    templateCache[templatePath] = template;
+    templateCache[normalizedTemplatePath] = template;
   }
 
   return template;
