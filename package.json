@@ -1,6 +1,6 @@
 {
   "name": "garnet",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "A fast and minimalistic template engine for node.",
   "main": "garnet.js",
   "scripts": {

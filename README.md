@@ -73,7 +73,7 @@ If you want to omit the `.garnet` extension from the line above, you can tell Ex
 If you want to use a different file extension (e.g., `.html`) for views, use this:
 
     app.set('view engine', 'html');       // Tell Express to assume this extension
-    app.engine('html', garnet.__express); // Tell express to use Garnet for this extension
+    app.engine('html', garnet.__express); // Tell Express to use Garnet for this extension
     garnet.templateExt = '.html';         // Tell Garnet to assume this extension
 
 ### Locals
